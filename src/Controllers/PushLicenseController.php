@@ -22,59 +22,42 @@ class PushLicenseController extends Controller
         }
 
         $pubPath = __DIR__ . '/../../keys/public.pem';
-        if (!file_exists($pubPath)) {
-            return response()->json(['error' => 'server public key not available'], 500);
-        }
-
         $kid = $request->input('kid');
 
-        // Determine which public key to use: if kid present, try to fetch key from authority JWKS.
+        // Attempt JWKS-first if authority URL configured and kid present.
         $pubKeyPem = null;
-        if (!empty($kid)) {
-            $authority = config('license-client.authority_url') ?? null;
-            if ($authority) {
-                try {
-                    $jwksResp = \Illuminate\Support\Facades\Http::timeout(config('license-client.remote_timeout', 5))->get(rtrim($authority, '/') . '/.well-known/jwks.json');
-                    if ($jwksResp->successful()) {
-                        $jwks = $jwksResp->json();
-                        foreach ($jwks['keys'] ?? [] as $jwk) {
-                            if (!empty($jwk['kid']) && $jwk['kid'] === $kid) {
-                                // Prefer x5c certificate if present
-                                if (!empty($jwk['x5c'][0])) {
-                                    $cert = chunk_split($jwk['x5c'][0], 64, "\n");
-                                    $certPem = "-----BEGIN CERTIFICATE-----\n" . $cert . "-----END CERTIFICATE-----\n";
-                                    $pubKeyPem = openssl_pkey_get_public($certPem) ? $certPem : null;
+        $authority = config('license-client.authority_url') ?? null;
+
+        if (!empty($kid) && !empty($authority)) {
+            try {
+                $jwksResp = \Illuminate\Support\Facades\Http::timeout(config('license-client.remote_timeout', 5))->get(rtrim($authority, '/') . '/.well-known/jwks.json');
+                if ($jwksResp->successful()) {
+                    $jwks = $jwksResp->json();
+                    foreach ($jwks['keys'] ?? [] as $jwk) {
+                        if (!empty($jwk['kid']) && $jwk['kid'] === $kid) {
+                            // Prefer x5c certificate if present
+                            if (!empty($jwk['x5c'][0])) {
+                                $cert = chunk_split($jwk['x5c'][0], 64, "\n");
+                                $certPem = "-----BEGIN CERTIFICATE-----\n" . $cert . "-----END CERTIFICATE-----\n";
+                                if (openssl_pkey_get_public($certPem)) {
+                                    $pubKeyPem = $certPem;
                                 }
-                                // If no x5c, we may fallback to using the bundled public key only if n/e matches
-                                if (empty($pubKeyPem) && !empty($jwk['n']) && !empty($jwk['e'])) {
-                                    // compare to bundled public key
-                                    $localPem = file_exists($pubPath) ? file_get_contents($pubPath) : null;
-                                    if ($localPem) {
-                                        $res = openssl_pkey_get_public($localPem);
-                                        $details = $res ? openssl_pkey_get_details($res) : null;
-                                        if ($details && !empty($details['rsa']['n']) && !empty($details['rsa']['e'])) {
-                                            $localN = rtrim(strtr(base64_encode($details['rsa']['n']), '+/', '-_'), '=');
-                                            $localE = rtrim(strtr(base64_encode($details['rsa']['e']), '+/', '-_'), '=');
-                                            if (hash_equals($localN, $jwk['n']) && hash_equals($localE, $jwk['e'])) {
-                                                $pubKeyPem = $localPem;
-                                            }
-                                        }
-                                    }
-                                }
-                                break;
                             }
+
+                            // If x5c not present, we can't reliably construct PEM here; fallback to bundled key below
+                            break;
                         }
                     }
-                } catch (\Throwable $e) {
-                    // ignore jwks fetch errors and fallback to bundled key below
                 }
+            } catch (\Throwable $e) {
+                logger()->debug('Failed to fetch JWKS during push verification: ' . $e->getMessage());
             }
         }
 
-        // Fallback: use bundled public.pem
+        // Fallback: use bundled public.pem if JWKS did not provide an x5c cert
         if (empty($pubKeyPem)) {
             if (!file_exists($pubPath)) {
-                return response()->json(['error' => 'server public key not available'], 500);
+                return response()->json(['error' => 'server public key not available; JWKS did not provide x5c and no bundled key found'], 500);
             }
             $pubKeyPem = file_get_contents($pubPath);
         }
@@ -131,5 +114,13 @@ class PushLicenseController extends Controller
         }
 
         return response()->json(['ok' => true], 200);
+    }
+
+    /**
+     * Simple health check for the push endpoint (GET /.well-known/push-license).
+     */
+    public function health()
+    {
+        return response()->json(['ok' => true, 'service' => 'push-license'], 200);
     }
 }

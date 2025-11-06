@@ -133,6 +133,10 @@ class LicenseServiceProvider extends ServiceProvider
         try {
             \Illuminate\Support\Facades\Route::post('/.well-known/push-license', '\\Hearth\\LicenseClient\\Controllers\\PushLicenseController@receive')
                 ->middleware('api');
+
+            // Health-check GET for easier probing of the endpoint
+            \Illuminate\Support\Facades\Route::get('/.well-known/push-license', '\\Hearth\\LicenseClient\\Controllers\\PushLicenseController@health')
+                ->middleware('api');
         } catch (\Throwable $e) {
             // ignore if route registration fails
         }
