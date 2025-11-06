@@ -17,6 +17,56 @@ class EnsureHasValidLicense
 
         $store = storage_path('license.json');
         if (!file_exists($store)) {
+            // If this app is the authority itself (authority_url matches app URL),
+            // allow a local DB-backed fallback so admins can approve licenses
+            // from the same app without manually running the install command.
+            try {
+                $authorityUrl = config('license-client.authority_url') ?? config('license-client.authority') ?? null;
+                $appUrl = config('app.url') ?? env('APP_URL', '');
+                $authHost = $authorityUrl ? parse_url(rtrim($authorityUrl, '/'), PHP_URL_HOST) : null;
+                $appHost = parse_url($appUrl, PHP_URL_HOST) ?: gethostname();
+
+                if ($authHost && $authHost === $appHost) {
+                    // Try to find an active license in the local database for this host
+                    if (class_exists('\App\\Models\\License')) {
+                        $licenseModel = \App\Models\License::where('domain', $appHost)
+                            ->where('is_active', true)
+                            ->first();
+                        if ($licenseModel && (empty($licenseModel->expires_at) || strtotime($licenseModel->expires_at) > time())) {
+                            // Optionally cache/write a local license.json so subsequent requests
+                            // use the file path check. We'll write a minimal encrypted payload.
+                            try {
+                                $payload = [
+                                    'license_key' => $licenseModel->license_key,
+                                    'domain' => $licenseModel->domain,
+                                    'data' => [
+                                        'valid' => true,
+                                        'message' => 'License active (local DB fallback)',
+                                        'expires_at' => $licenseModel->expires_at?->toIso8601String() ?? null,
+                                    ],
+                                    'fetched_at' => now()->toIso8601String(),
+                                    'authority' => $authorityUrl ?: $appUrl,
+                                ];
+                                $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
+                                $encrypted = \Hearth\LicenseClient\Encryption::encryptString($plaintext);
+                                $wrapper = json_encode([
+                                    'encrypted' => true,
+                                    'version' => 1,
+                                    'payload' => $encrypted,
+                                ], JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+                                @file_put_contents($store, $wrapper);
+                            } catch (\Throwable $e) {
+                                // ignore write errors and just allow the request
+                            }
+
+                            return $next($request);
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // ignore and fall through to blocked response below
+            }
+
             $message = \Hearth\LicenseClient\Messages::get('not_present');
             return response()->view('license-client::blocked', ['message' => $message], 403);
         }
