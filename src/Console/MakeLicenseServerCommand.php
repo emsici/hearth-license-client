@@ -106,8 +106,21 @@ class MakeLicenseServerCommand extends Command
             return 6;
         }
 
-        // Verified: save license metadata locally in storage/license.json (encrypted using APP_KEY by default)
+        // Decide whether to persist the license locally. Only save when the
+        // authority reports the license as valid. For pending/invalid responses
+        // we avoid writing a local license file so a repeat check after admin
+        // approval will produce the saved, active license.
+        $serverMessage = $data['message'] ?? '';
         $store = storage_path('license.json');
+
+        if (empty($data['valid']) || $data['valid'] !== true) {
+            // Do not persist pending/invalid license locally.
+            $this->line('Server message: ' . $serverMessage);
+            $this->line('Licența nu este activă încă — nu s-a salvat nimic local. Re-rulați comanda după aprobare.');
+            return 0;
+        }
+
+        // Verified and active: save license metadata locally in storage/license.json
         $payload = [
             'license_key' => $key,
             'domain' => $domain,
@@ -132,7 +145,14 @@ class MakeLicenseServerCommand extends Command
         }
 
         $this->info('License verified and saved to ' . $store . ' (encrypted)');
-        $this->line('Server message: ' . ($data['message'] ?? '')); 
+        $this->line('Server message: ' . $serverMessage);
+
+        // If the authority indicates the license doesn't yet exist / was only registered,
+        // give a clearer instruction to retry activation later.
+        $mLower = mb_strtolower($serverMessage);
+        if (str_contains($mLower, 'nu există') || str_contains($mLower, 'înregistrat') || str_contains($mLower, 'înregistrată')) {
+            $this->line('Notă: licența a fost înregistrată pentru aprobare la autoritate. Încercați reactivarea mai târziu (rulați din nou comanda) după ce administratorul aprobă cererea.');
+        }
 
         return 0;
     }
