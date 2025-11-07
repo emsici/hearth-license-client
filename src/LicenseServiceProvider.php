@@ -127,6 +127,22 @@ class LicenseServiceProvider extends ServiceProvider
             // don't break the application if something goes wrong here
         }
 
+        // Optionally prepend to the global HTTP kernel so enforcement covers
+        // all requests (including routes not in 'web' group). This is a
+        // package-level decision and controlled via config.
+        try {
+            if (config('license-client.global_enforce', true)) {
+                $kernel = $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
+                if (method_exists($kernel, 'prependMiddleware')) {
+                    $kernel->prependMiddleware(\Hearth\LicenseClient\Middleware\EnsureHasValidLicense::class);
+                }
+            }
+        } catch (\Throwable $e) {
+            logger()->debug('Failed to prepend license middleware to kernel: ' . $e->getMessage());
+        }
+
+        // No panic/unlock routes registered - panic functionality removed.
+
         // Register a simple signed-push endpoint so the authority can POST a
         // signed license payload directly to this client. This is registered
         // on the API middleware group to avoid CSRF requirements.

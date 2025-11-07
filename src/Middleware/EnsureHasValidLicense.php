@@ -15,6 +15,22 @@ class EnsureHasValidLicense
             return $next($request);
         }
 
+        // Allow bypass when package enforcement is disabled
+        if (! config('license-client.enforce', true)) {
+            return $next($request);
+        }
+
+        // Allow whitelisted paths (prefix match)
+        $path = $request->getPathInfo();
+        $whitelist = config('license-client.whitelist', []);
+        foreach ($whitelist as $allowed) {
+            if ($allowed !== '' && str_starts_with($path, $allowed)) {
+                return $next($request);
+            }
+        }
+
+        // No panic/unlock bypass allowed: the package does not support temporary file-based unlocks.
+
         $store = storage_path('license.json');
         if (!file_exists($store)) {
             $message = \Hearth\LicenseClient\Messages::get('not_present');
