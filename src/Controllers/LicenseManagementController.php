@@ -94,23 +94,12 @@ class LicenseManagementController extends Controller
                             ->with('license_error', 'O licență validă este deja instalată și nu poate fi suprascrisă. Ștergeți-o manual mai întâi.');
                     }
                 }
-            } catch (\Throwable $e) {
-                // dacă fișierul este corupt, permitem suprascrierea
-            }
-        }
-
-        // verificare la autoritate
-        $authority = config('license-client.authority_url');
-        if (empty($authority)) {
-            return redirect()->route('license-client.licente.index')
-                ->with('license_error', 'Autoritatea nu este configurată; nu se poate verifica licența online.');
-        }
-
-        $verifyPath = config('license-client.verify_endpoint', '/api/verify');
-        $verifyUrl = rtrim($authority, '/') . '/' . ltrim($verifyPath, '/');
-
-        try {
-            $resp = Http::timeout(config('license-client.remote_timeout', 5))
+            try {
+                $resp = Http::timeout(config('license-client.remote_timeout', 5))
+                    ->post($verifyUrl, [
+                        'license_key' => $key,
+                        'domain' => parse_url(config('app.url') ?? env('APP_URL', ''), PHP_URL_HOST) ?: gethostname(),
+                    ]);
                 $json = $resp->json();
 
                 // Emulează exact logica make:license-server
@@ -157,6 +146,21 @@ class LicenseManagementController extends Controller
 
                 try {
                     $passphrase = $request->input('passphrase') ?: env('APP_LICENSE_PASSPHRASE', null);
+                    $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
+                    $encrypted = Encryption::encryptString($plaintext, $passphrase);
+                    $wrapper = json_encode([
+                        'encrypted' => true,
+                        'version' => 1,
+                        'payload' => $encrypted,
+                    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+                    file_put_contents($existingPath, $wrapper);
+                    $serverMessage = $data['message'] ?? null;
+                    $msg = 'Licența a fost verificată și salvată local.' . ($serverMessage ? ' Mesaj server: ' . $serverMessage : '');
+                    return redirect()->route('license-client.licente.index')->with('license_success', $msg);
+                } catch (\Throwable $e) {
+                    return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la salvarea licenței: ' . $e->getMessage());
+                }
+            }
                     $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
                     $encrypted = Encryption::encryptString($plaintext, $passphrase);
                     $wrapper = json_encode([
