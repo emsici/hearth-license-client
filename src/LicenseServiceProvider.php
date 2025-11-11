@@ -109,6 +109,11 @@ class LicenseServiceProvider extends ServiceProvider
         // Load package views (embedded, not publishable) so blocked page is always available
         $this->loadViewsFrom(__DIR__ . '/../resources/views', 'license-client');
 
+        // Load package web routes for interactive license management (/licente)
+        // These routes are intentionally minimal and placed inside the package so
+        // that the host application does not need to provide an interactive
+        // license UI.
+        $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
         if ($this->app->runningInConsole()) {
             $this->commands([
                 Console\MakeLicenseServerCommand::class,
@@ -116,13 +121,29 @@ class LicenseServiceProvider extends ServiceProvider
             return;
         }
 
-        // Always enforce: push the middleware into the 'web' group so web requests
-        // are blocked until a valid license is present. This is intentionally
-        // non-configurable to ensure the client application cannot disable
-        // enforcement at runtime.
+        // Always enforce by default: push the middleware into the 'web' group
+        // so web requests are blocked until a valid license is present.
+        // However, if this application is the authority itself (i.e. its
+        // configured authority_url points to this app), do not enforce — the
+        // authority should not block itself.
         try {
-            $router = $this->app->make('router');
-            $router->pushMiddlewareToGroup('web', \Hearth\LicenseClient\Middleware\EnsureHasValidLicense::class);
+            $isAuthority = false;
+            $authority = config('license-client.authority_url') ?? null;
+            if (!empty($authority)) {
+                $authHost = parse_url(rtrim($authority, '/'), PHP_URL_HOST) ?: null;
+                $appUrl = config('app.url') ?? env('APP_URL', '');
+                $appHost = parse_url($appUrl, PHP_URL_HOST) ?: null;
+                if ($authHost && $appHost && strcasecmp($authHost, $appHost) === 0) {
+                    $isAuthority = true;
+                }
+            }
+
+            if ($isAuthority) {
+                logger()->info('License client: this application is configured as authority — skipping enforcement middleware.');
+            } else {
+                $router = $this->app->make('router');
+                $router->pushMiddlewareToGroup('web', \Hearth\LicenseClient\Middleware\EnsureHasValidLicense::class);
+            }
         } catch (\Throwable $e) {
             // don't break the application if something goes wrong here
         }

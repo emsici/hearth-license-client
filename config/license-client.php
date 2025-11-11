@@ -19,6 +19,10 @@ return [
 		'/.well-known/push-license',
 		'/.well-known/jwks.json',
 		'/keys/pem',
+		// Allow the package's interactive management UI and main app settings
+		'/licente',
+		'/licenta',
+		'/setari',
 	],
 	// Interval (seconds) to allow remote manifest JWKS fetch timeouts before falling back
 	'remote_timeout' => 5,
