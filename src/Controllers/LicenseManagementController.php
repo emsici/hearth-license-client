@@ -94,95 +94,89 @@ class LicenseManagementController extends Controller
                             ->with('license_error', 'O licență validă este deja instalată și nu poate fi suprascrisă. Ștergeți-o manual mai întâi.');
                     }
                 }
-            try {
-                $resp = Http::timeout(config('license-client.remote_timeout', 5))
-                    ->post($verifyUrl, [
-                        'license_key' => $key,
-                        'domain' => parse_url(config('app.url') ?? env('APP_URL', ''), PHP_URL_HOST) ?: gethostname(),
-                    ]);
-                $json = $resp->json();
+            } catch (\Throwable $e) {
+                // dacă fișierul este corupt, permitem suprascrierea
+            }
+        }
 
-                // Emulează exact logica make:license-server
-                if (empty($json['data']) || !isset($json['signature'])) {
-                    return redirect()->route('license-client.licente.index')->with('license_error', 'Răspuns invalid de la autoritate (așteptat data+signature).');
-                }
+        // verificare la autoritate
+        $authority = config('license-client.authority_url');
+        if (empty($authority)) {
+            return redirect()->route('license-client.licente.index')
+                ->with('license_error', 'Autoritatea nu este configurată; nu se poate verifica licența online.');
+        }
 
-                $data = $json['data'];
-                $signature = base64_decode($json['signature']);
+        $verifyPath = config('license-client.verify_endpoint', '/api/verify');
+        $verifyUrl = rtrim($authority, '/') . '/' . ltrim($verifyPath, '/');
 
-                // Fetch public PEM from authority (configurable)
-                $pemPath = config('license-client.pem_endpoint', '/keys/pem');
-                try {
-                    $pemResp = Http::timeout(config('license-client.remote_timeout', 5))->get(rtrim($authority, '/') . '/' . ltrim($pemPath, '/'));
-                    if (! $pemResp->successful()) {
-                        return redirect()->route('license-client.licente.index')->with('license_error', 'Nu am putut prelua cheia publică de la autoritate: HTTP ' . $pemResp->status());
-                    }
-                    $pem = $pemResp->body();
-                } catch (\Throwable $e) {
-                    return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la descărcarea cheii publice: ' . $e->getMessage());
-                }
-
-                $payloadJson = json_encode($data);
-                $pub = openssl_pkey_get_public($pem);
-                if ($pub === false) {
-                    return redirect()->route('license-client.licente.index')->with('license_error', 'Cheia publică primită de la autoritate este invalidă.');
-                }
-
-                $ok = openssl_verify($payloadJson, $signature, $pub, OPENSSL_ALGO_SHA256) === 1;
-                openssl_free_key($pub);
-
-                if (!$ok) {
-                    return redirect()->route('license-client.licente.index')->with('license_error', 'Verificarea semnăturii a eșuat.');
-                }
-
-                // Persist exact ca make:license-server
-                $payload = [
+        try {
+            $resp = Http::timeout(config('license-client.remote_timeout', 5))
+                ->post($verifyUrl, [
                     'license_key' => $key,
                     'domain' => parse_url(config('app.url') ?? env('APP_URL', ''), PHP_URL_HOST) ?: gethostname(),
-                    'data' => $data,
-                    'fetched_at' => now()->toIso8601String(),
-                    'authority' => $authority,
-                ];
+                ]);
+            $json = $resp->json();
 
-                try {
-                    $passphrase = $request->input('passphrase') ?: env('APP_LICENSE_PASSPHRASE', null);
-                    $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
-                    $encrypted = Encryption::encryptString($plaintext, $passphrase);
-                    $wrapper = json_encode([
-                        'encrypted' => true,
-                        'version' => 1,
-                        'payload' => $encrypted,
-                    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-                    file_put_contents($existingPath, $wrapper);
-                    $serverMessage = $data['message'] ?? null;
-                    $msg = 'Licența a fost verificată și salvată local.' . ($serverMessage ? ' Mesaj server: ' . $serverMessage : '');
-                    return redirect()->route('license-client.licente.index')->with('license_success', $msg);
-                } catch (\Throwable $e) {
-                    return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la salvarea licenței: ' . $e->getMessage());
-                }
+            // Emulează exact logica make:license-server
+            if (empty($json['data']) || !isset($json['signature'])) {
+                return redirect()->route('license-client.licente.index')->with('license_error', 'Răspuns invalid de la autoritate (așteptat data+signature).');
             }
-                    $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
-                    $encrypted = Encryption::encryptString($plaintext, $passphrase);
-                    $wrapper = json_encode([
-                        'encrypted' => true,
-                        'version' => 1,
-                        'payload' => $encrypted,
-                    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-                    file_put_contents($existingPath, $wrapper);
-                    $serverMessage = $data['message'] ?? null;
-                    $msg = 'Licența a fost verificată și salvată local.' . ($serverMessage ? ' Mesaj server: ' . $serverMessage : '');
-                    return redirect()->route('license-client.licente.index')->with('license_success', $msg);
-                } catch (\Throwable $e) {
-                    return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la salvarea licenței: ' . $e->getMessage());
+
+            $data = $json['data'];
+            $signature = base64_decode($json['signature']);
+
+            // Fetch public PEM from authority (configurable)
+            $pemPath = config('license-client.pem_endpoint', '/keys/pem');
+            try {
+                $pemResp = Http::timeout(config('license-client.remote_timeout', 5))->get(rtrim($authority, '/') . '/' . ltrim($pemPath, '/'));
+                if (! $pemResp->successful()) {
+                    return redirect()->route('license-client.licente.index')->with('license_error', 'Nu am putut prelua cheia publică de la autoritate: HTTP ' . $pemResp->status());
                 }
-                $encrypted = Encryption::encryptString($plaintext);
-                $wrapper = json_encode(['encrypted' => true, 'version' => 1, 'payload' => $encrypted], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-                file_put_contents($existingPath, $wrapper);
-                return redirect()->route('license-client.licente.index')->with('license_success', 'Licența a fost trimisă spre aprobare (pending).');
+                $pem = $pemResp->body();
             } catch (\Throwable $e) {
-                return redirect()->route('license-client.licente.index')
-                    ->with('license_error', 'Eroare la salvarea licenței: ' . $e->getMessage());
+                return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la descărcarea cheii publice: ' . $e->getMessage());
             }
+
+            $payloadJson = json_encode($data);
+            $pub = openssl_pkey_get_public($pem);
+            if ($pub === false) {
+                return redirect()->route('license-client.licente.index')->with('license_error', 'Cheia publică primită de la autoritate este invalidă.');
+            }
+
+            $ok = openssl_verify($payloadJson, $signature, $pub, OPENSSL_ALGO_SHA256) === 1;
+            openssl_free_key($pub);
+
+            if (!$ok) {
+                return redirect()->route('license-client.licente.index')->with('license_error', 'Verificarea semnăturii a eșuat.');
+            }
+
+            // Persist exact ca make:license-server
+            $payload = [
+                'license_key' => $key,
+                'domain' => parse_url(config('app.url') ?? env('APP_URL', ''), PHP_URL_HOST) ?: gethostname(),
+                'data' => $data,
+                'fetched_at' => now()->toIso8601String(),
+                'authority' => $authority,
+            ];
+
+            try {
+                $passphrase = $request->input('passphrase') ?: env('APP_LICENSE_PASSPHRASE', null);
+                $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
+                $encrypted = Encryption::encryptString($plaintext, $passphrase);
+                $wrapper = json_encode([
+                    'encrypted' => true,
+                    'version' => 1,
+                    'payload' => $encrypted,
+                ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+                file_put_contents($existingPath, $wrapper);
+                $serverMessage = $data['message'] ?? null;
+                $msg = 'Licența a fost verificată și salvată local.' . ($serverMessage ? ' Mesaj server: ' . $serverMessage : '');
+                return redirect()->route('license-client.licente.index')->with('license_success', $msg);
+            } catch (\Throwable $e) {
+                return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la salvarea licenței: ' . $e->getMessage());
+            }
+        } catch (\Throwable $e) {
+            return redirect()->route('license-client.licente.index')->with('license_error', 'Eroare la verificarea la autoritate: ' . $e->getMessage());
         }
 
         return redirect()->route('license-client.licente.index')
