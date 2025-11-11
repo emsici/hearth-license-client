@@ -9,11 +9,11 @@ namespace Hearth\LicenseClient;
 class Messages
 {
     protected static array $messages = [
-        'not_present' => "A valid license is required to run this application. Please contact support.",
-        'invalid' => "The installed license appears to be invalid or corrupted. Please re-install your license.",
-        'not_active' => "Your license is not active. Please activate your license or contact support.",
-        'domain_mismatch' => "This license is not valid for this host.",
-        'expired' => "Your license has expired. Please renew your license to continue.",
+        'not_present' => 'Pentru a rula această aplicație este necesară o licență validă. Vă rugăm să contactați suportul.',
+        'invalid' => 'Licența instalată pare a fi invalidă sau coruptă. Vă rugăm să reinstalați licența.',
+        'not_active' => 'Licența nu este activă. Activați licența sau contactați suportul.',
+        'domain_mismatch' => 'Această licență nu este valabilă pentru acest domeniu.',
+        'expired' => 'Licența dumneavoastră a expirat. Vă rugăm să reînnoiți licența pentru a continua.',
     ];
 
     public static function get(string $key): string

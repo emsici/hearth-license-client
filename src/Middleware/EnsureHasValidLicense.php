@@ -90,7 +90,7 @@ class EnsureHasValidLicense
             try {
                 $expTs = strtotime($expires);
                 if ($expTs !== false && $expTs < time()) {
-                    $message = config('license-client.messages.expired');
+                    $message = \Hearth\LicenseClient\Messages::get('expired');
                     return response()->view('license-client::blocked', ['message' => $message], 403);
                 }
             } catch (\Throwable $e) {
