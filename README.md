@@ -1,7 +1,5 @@
 # Hearth License Client
 
-Laravel helper package that verifies a license key against [hearth.master-data.ro](https://hearth.master-data.ro) and stores the result locally (encrypted).
-
 [View on GitHub](https://github.com/emsici/hearth-license-client) | [View on Packagist](https://packagist.org/packages/hearth/license-client)
 
 ## Instalare / Installation
@@ -70,4 +68,4 @@ Acest flux asigură că doar licențele validate de autoritate pot debloca aplic
 - [Packagist: hearth/license-client](https://packagist.org/packages/hearth/license-client)
 
 ---
-© 2025 emsici / master-data.ro
+© 2025 master-data.ro
