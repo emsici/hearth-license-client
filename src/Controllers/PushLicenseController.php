@@ -25,12 +25,12 @@ class PushLicenseController extends Controller
         $kid = $request->input('kid');
 
         // Attempt JWKS-first if authority URL configured and kid present.
-        $pubKeyPem = null;
-        $authority = config('license-client.authority_url') ?? null;
+    $pubKeyPem = null;
+    $authority = \Hearth\LicenseClient\Package::authorityUrl() ?? null;
 
         if (!empty($kid) && !empty($authority)) {
             try {
-                $jwksResp = \Illuminate\Support\Facades\Http::timeout(config('license-client.remote_timeout', 5))->get(rtrim($authority, '/') . '/.well-known/jwks.json');
+                $jwksResp = \Illuminate\Support\Facades\Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())->get(rtrim($authority, '/') . '/.well-known/jwks.json');
                 if ($jwksResp->successful()) {
                     $jwks = $jwksResp->json();
                     foreach ($jwks['keys'] ?? [] as $jwk) {
@@ -98,7 +98,7 @@ class PushLicenseController extends Controller
                 'domain' => $decoded['domain'],
                 'data' => $decoded['data'] ?? [],
                 'fetched_at' => now()->toIso8601String(),
-                'authority' => config('license-client.authority_url') ?? null,
+                'authority' => \Hearth\LicenseClient\Package::authorityUrl() ?? null,
             ], JSON_UNESCAPED_SLASHES);
 
             $encrypted = Encryption::encryptString($plaintext);

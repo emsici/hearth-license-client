@@ -15,14 +15,9 @@ class EnsureHasValidLicense
             return $next($request);
         }
 
-        // Allow bypass when package enforcement is disabled
-        if (! config('license-client.enforce', true)) {
-            return $next($request);
-        }
-
         // Allow whitelisted paths (prefix match)
         $path = $request->getPathInfo();
-        $whitelist = config('license-client.whitelist', []);
+        $whitelist = \Hearth\LicenseClient\Package::whitelist();
         foreach ($whitelist as $allowed) {
             if ($allowed !== '' && str_starts_with($path, $allowed)) {
                 return $next($request);
@@ -51,7 +46,7 @@ class EnsureHasValidLicense
         // Try decrypting with several candidate passphrases to handle cases where
         // the license was written using an explicit passphrase (e.g. --passphrase)
         $obj = null;
-        $candidates = [null, env('APP_LICENSE_PASSPHRASE', null), config('license-client.passphrase', null)];
+        $candidates = [null];
         // unique and keep order
         $candidates = array_values(array_unique(array_filter($candidates, function ($v) { return $v !== ''; })));
         foreach ($candidates as $candidate) {

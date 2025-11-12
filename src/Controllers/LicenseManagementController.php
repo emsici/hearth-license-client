@@ -100,17 +100,17 @@ class LicenseManagementController extends Controller
         }
 
         // verificare la autoritate
-        $authority = config('license-client.authority_url');
+        $authority = \Hearth\LicenseClient\Package::authorityUrl();
         if (empty($authority)) {
             return redirect()->route('license-client.licente.index')
                 ->with('license_error', 'Autoritatea nu este configurată; nu se poate verifica licența online.');
         }
 
-        $verifyPath = config('license-client.verify_endpoint', '/api/verify');
+        $verifyPath = \Hearth\LicenseClient\Package::verifyEndpoint();
         $verifyUrl = rtrim($authority, '/') . '/' . ltrim($verifyPath, '/');
 
         try {
-            $resp = Http::timeout(config('license-client.remote_timeout', 5))
+            $resp = Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())
                 ->post($verifyUrl, [
                     'license_key' => $key,
                     'domain' => parse_url(config('app.url') ?? env('APP_URL', ''), PHP_URL_HOST) ?: gethostname(),
@@ -126,9 +126,9 @@ class LicenseManagementController extends Controller
             $signature = base64_decode($json['signature']);
 
             // Fetch public PEM from authority (configurable)
-            $pemPath = config('license-client.pem_endpoint', '/keys/pem');
+            $pemPath = \Hearth\LicenseClient\Package::pemEndpoint();
             try {
-                $pemResp = Http::timeout(config('license-client.remote_timeout', 5))->get(rtrim($authority, '/') . '/' . ltrim($pemPath, '/'));
+                $pemResp = Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())->get(rtrim($authority, '/') . '/' . ltrim($pemPath, '/'));
                 if (! $pemResp->successful()) {
                     return redirect()->route('license-client.licente.index')->with('license_error', 'Nu am putut prelua cheia publică de la autoritate: HTTP ' . $pemResp->status());
                 }
@@ -160,9 +160,8 @@ class LicenseManagementController extends Controller
             ];
 
             try {
-                $passphrase = $request->input('passphrase') ?: env('APP_LICENSE_PASSPHRASE', null);
                 $plaintext = json_encode($payload, JSON_UNESCAPED_SLASHES);
-                $encrypted = Encryption::encryptString($plaintext, $passphrase);
+                $encrypted = Encryption::encryptString($plaintext);
                 $wrapper = json_encode([
                     'encrypted' => true,
                     'version' => 1,
@@ -240,7 +239,7 @@ class LicenseManagementController extends Controller
             $decrypted = Encryption::decryptString($wrapper['payload']);
             $license = json_decode($decrypted, true);
             $key = $license['license_key'] ?? null;
-            $authority = config('license-client.authority_url');
+            $authority = \Hearth\LicenseClient\Package::authorityUrl();
 
             if (empty($authority) || empty($key)) {
                 return redirect()->route('license-client.licente.index')
@@ -248,9 +247,9 @@ class LicenseManagementController extends Controller
             }
 
             // === apel API ===
-            $verifyPath = config('license-client.verify_endpoint', '/api/verify');
+            $verifyPath = \Hearth\LicenseClient\Package::verifyEndpoint();
             $verifyUrl = rtrim($authority, '/') . '/' . ltrim($verifyPath, '/');
-            $resp = Http::timeout(config('license-client.remote_timeout', 5))
+            $resp = Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())
                 ->post($verifyUrl, [
                     'license_key' => $key,
                     'domain' => $license['domain'] ?? null,
@@ -270,8 +269,8 @@ class LicenseManagementController extends Controller
             // === verificare semnătură ===
             $data = $json['data'];
             $signature = base64_decode($json['signature']);
-            $pemPath = config('license-client.pem_endpoint', '/keys/pem');
-            $pemResp = Http::timeout(config('license-client.remote_timeout', 5))
+            $pemPath = \Hearth\LicenseClient\Package::pemEndpoint();
+            $pemResp = Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())
                 ->get(rtrim($authority, '/') . '/' . ltrim($pemPath, '/'));
 
             if (!$pemResp->successful()) {
@@ -298,7 +297,7 @@ class LicenseManagementController extends Controller
             $license['fetched_at'] = now()->toIso8601String();
 
             $plaintext = json_encode($license, JSON_UNESCAPED_SLASHES);
-            $encrypted = Encryption::encryptString($plaintext, env('APP_LICENSE_PASSPHRASE', null));
+            $encrypted = Encryption::encryptString($plaintext);
             $wrapper = json_encode(['encrypted' => true, 'version' => 1, 'payload' => $encrypted], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
             file_put_contents($path, $wrapper);
 

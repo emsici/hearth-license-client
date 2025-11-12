@@ -9,9 +9,7 @@ class LicenseServiceProvider extends ServiceProvider
 {
     public function register()
     {
-        // Merge default config so config() calls work even if the config
-        // file hasn't been published.
-        $this->mergeConfigFrom(__DIR__ . '/../config/license-client.php', 'license-client');
+        // No publishable or mergeable config: package is locked down by design.
     }
 
     /**
@@ -24,7 +22,7 @@ class LicenseServiceProvider extends ServiceProvider
      */
     protected function verifyBundledKeyAgainstJwks()
     {
-        $authority = config('license-client.authority_url') ?? null;
+        $authority = \Hearth\LicenseClient\Package::authorityUrl() ?? null;
         if (empty($authority)) {
             return; // nothing to verify against
         }
@@ -32,7 +30,7 @@ class LicenseServiceProvider extends ServiceProvider
         $jwksUrl = rtrim($authority, '/') . '/.well-known/jwks.json';
 
         try {
-            $resp = Http::timeout(config('license-client.remote_timeout', 5))->get($jwksUrl);
+            $resp = Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())->get($jwksUrl);
         } catch (\Throwable $e) {
             // Could not fetch JWKS; allow boot to continue (network issues)
             logger()->warning('Could not fetch JWKS for license-client verification: ' . $e->getMessage());
@@ -96,12 +94,12 @@ class LicenseServiceProvider extends ServiceProvider
      */
     protected function notifyAuthorityAlert(?string $privatePem, array $alert): void
     {
-        $authority = config('license-client.authority_url') ?? null;
+        $authority = \Hearth\LicenseClient\Package::authorityUrl() ?? null;
         if (empty($authority)) {
             return;
         }
 
-        $endpoint = rtrim($authority, '/') . (config('license-client.authority_alert_endpoint') ?? '/api/alert/fraud');
+        $endpoint = rtrim($authority, '/') . (\Hearth\LicenseClient\Package::alertEndpoint());
 
         $payloadJson = json_encode($alert, JSON_UNESCAPED_SLASHES);
         $signature = null;
@@ -139,10 +137,7 @@ class LicenseServiceProvider extends ServiceProvider
             throw $e;
         }
 
-        // publish config
-        $this->publishes([
-            __DIR__ . '/../config/license-client.php' => config_path('license-client.php'),
-        ], 'license-client-config');
+        // No config publish — all options are internal to the package.
 
         // Load package views (embedded, not publishable) so blocked page is always available
         $this->loadViewsFrom(__DIR__ . '/../resources/views', 'license-client');
@@ -171,13 +166,9 @@ class LicenseServiceProvider extends ServiceProvider
             // application is the authority. A private key is required to sign
             // license payloads and should not be present on client installs.
             try {
-                $privPath = env('LICENSE_PRIVATE_PATH', config('license-client.private_path', null));
+                $privPath = \Hearth\LicenseClient\Package::privateKeyPath();
                 if (empty($privPath)) {
-                    // common storage location fallback
-                    $candidate = storage_path('private.pem');
-                    if (file_exists($candidate)) {
-                        $privPath = $candidate;
-                    }
+                    // no private key -> not authority (continue)
                 }
 
                 if (!empty($privPath) && file_exists($privPath)) {
@@ -220,11 +211,11 @@ class LicenseServiceProvider extends ServiceProvider
 
                                 // If authority JWKS is reachable, ensure it contains
                                 // a key matching our private key parameters.
-                                $authority = config('license-client.authority_url') ?? null;
+                                $authority = \Hearth\LicenseClient\Package::authorityUrl() ?? null;
                                 if (!empty($authority)) {
                                     try {
                                         $jwksUrl = rtrim($authority, '/') . '/.well-known/jwks.json';
-                                        $resp = Http::timeout(config('license-client.remote_timeout', 5))->get($jwksUrl);
+                                        $resp = Http::timeout(\Hearth\LicenseClient\Package::remoteTimeout())->get($jwksUrl);
                                         if ($resp->successful()) {
                                             $json = $resp->json();
                                             $found = false;
@@ -291,7 +282,7 @@ class LicenseServiceProvider extends ServiceProvider
             // is weaker but allows local development setups where keys are not
             // present.
             if (! $isAuthority) {
-                $authority = config('license-client.authority_url') ?? null;
+                $authority = \Hearth\LicenseClient\Package::authorityUrl() ?? null;
                 if (!empty($authority)) {
                     $authHost = parse_url(rtrim($authority, '/'), PHP_URL_HOST) ?: null;
                     $appUrl = config('app.url') ?? env('APP_URL', '');
@@ -316,7 +307,7 @@ class LicenseServiceProvider extends ServiceProvider
         // all requests (including routes not in 'web' group). This is a
         // package-level decision and controlled via config.
         try {
-            if (config('license-client.global_enforce', true)) {
+            if (\Hearth\LicenseClient\Package::globalEnforce()) {
                 $kernel = $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
                 if (method_exists($kernel, 'prependMiddleware')) {
                     $kernel->prependMiddleware(\Hearth\LicenseClient\Middleware\EnsureHasValidLicense::class);
@@ -329,13 +320,7 @@ class LicenseServiceProvider extends ServiceProvider
         // If we detected a private key and integrity validated, write a
         // signed fingerprint file for future reference.
         try {
-            $privPath = env('LICENSE_PRIVATE_PATH', config('license-client.private_path', null));
-            if (empty($privPath)) {
-                $candidate = storage_path('private.pem');
-                if (file_exists($candidate)) {
-                    $privPath = $candidate;
-                }
-            }
+            $privPath = \Hearth\LicenseClient\Package::privateKeyPath();
 
             if (!empty($privPath) && file_exists($privPath)) {
                 $priv = @file_get_contents($privPath);
@@ -378,7 +363,7 @@ class LicenseServiceProvider extends ServiceProvider
                             }
 
                             $wrapper = json_encode(['fingerprint' => $fingerprint, 'signature' => $sig, 'created_at' => now()->toIso8601String()], JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
-                            $fpFile = storage_path(config('license-client.fingerprint_file', 'license-fingerprint.json'));
+                            $fpFile = storage_path(\Hearth\LicenseClient\Package::fingerprintFile());
                             @file_put_contents($fpFile, $wrapper);
                         } catch (\Throwable $e) {
                             logger()->warning('Failed to write signed fingerprint: ' . $e->getMessage());

@@ -43,7 +43,7 @@ php artisan make:license-server LICENTA-TA
    - Dacă licența este validă, răspunde cu un payload semnat și criptat, ce conține metadatele licenței.
    - Dacă licența nu există sau necesită aprobare, răspunde cu un mesaj de pending/în așteptare.
    - Dacă licența este invalidă, răspunde cu eroare și motiv.
-3. **Clientul** verifică semnătura autorității (folosind cheia publică) și salvează local payload-ul, criptat cu `APP_KEY` sau `APP_LICENSE_PASSPHRASE`.
+3. **Clientul** verifică semnătura autorității (folosind cheia publică) și salvează local payload-ul, criptat automat (fără setări suplimentare).
 4. **Middleware-ul** pachetului blochează accesul la aplicație până când există o licență validă și verificată local.
 5. Poți re-verifica oricând licența locală cu autoritatea (din UI sau CLI) pentru a actualiza statusul.
 
@@ -68,23 +68,18 @@ Client → Autoritate → Client → Middleware → Aplicație
 - **Verificare periodică:** Poți re-verifica licența oricând (din UI sau CLI) pentru a actualiza statusul fără a reinstala.
 - **Pending/În aprobare:** Dacă autoritatea răspunde cu pending, aplicația va afișa statusul "În aprobare" și va bloca funcționalitatea până la aprobare.
 - **Securitate:** Orice modificare manuală a fișierului de licență va fi detectată și va bloca accesul.
-- **Push automat:** Autoritatea poate trimite licențe noi/actualizate direct către endpoint-ul clientului 
-- **Configurare flexibilă:** Endpoint-urile și comportamentul pot fi ajustate din `config/license-client.php` și `.env`.
+- **Push automat:** Autoritatea poate trimite licențe noi/actualizate direct către endpoint-ul clientului.
+- **Fără configurare la client:** Pachetul este blocat; nu există `config/license-client.php` și nu se pot schimba endpoint-uri sau comportamente. Singurul lucru setabil este cheia de licență, introdusă din UI sau CLI.
 - **Debug:** Mesajele de la autoritate sunt afișate clar în UI pentru transparență.
 
 ## Securitate / Security
 
-- Licența este salvată local, criptată cu `APP_KEY` (sau `APP_LICENSE_PASSPHRASE` dacă este setat).
+- Licența este salvată local, criptată în mod implicit; nu sunt necesare parole sau variabile suplimentare.
 - Cheia publică a autorității este preluată automat de la: `https://hearth.master-data.ro/keys/pem`.
-- Pentru extra siguranță, folosește o parolă dedicată în `.env`:
-  ```env
-  APP_LICENSE_PASSPHRASE=parola_ta_licenta
-  ```
 
 ## Notă enforcement
 
-- Middleware-ul de enforcement nu poate fi dezactivat din environment.
-- Pentru excluderi (ex: health, admin), folosește un middleware local cu prioritate mai mare.
+- Middleware-ul de enforcement nu poate fi dezactivat. Anumite rute sensibile (ex: health, JWKS, interfața de licență) sunt permise implicit de pachet.
 
 ## Linkuri utile
 

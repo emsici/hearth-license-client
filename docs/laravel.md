@@ -8,8 +8,8 @@ composer require hearth/license-client
 
 ## Configurare
 
-- Pentru testare locală, adaugă un repository de tip `path` în `composer.json`.
-- Poți configura endpoint-urile și comportamentul din `config/license-client.php` și `.env`.
+- Nu este necesară nicio configurare la client. Pachetul este blocat (fără `config/license-client.php`). Singurul lucru pe care îl setezi este cheia de licență (din UI/CLI).
+- Pentru testare locală, poți adăuga un repository de tip `path` în `composer.json`.
 
 ## Utilizare
 
